@@ -4,7 +4,7 @@ services:
     container_name: mongo_e_comm
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "27018:27017"
     volumes:
       - mongo_data:/data/db
     networks:
@@ -17,7 +17,7 @@ services:
     container_name: backend_e_comm
     restart: unless-stopped
     ports:
-      - "5000:5000"
+      - "5002:5000"
     environment:
       PORT: 5000
       MONGO_URI: mongodb://mongo:27017/ecomm_db
@@ -35,7 +35,7 @@ services:
     container_name: frontend_e_comm
     restart: unless-stopped
     ports:
-      - "80:80"
+      - "82:80"
     depends_on:
       - backend
     networks:
