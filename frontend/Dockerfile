@@ -10,7 +10,7 @@ RUN npm install
 COPY . .
 
 # Create temporary variable only available during Docker build the image
-ARG VITE_API_BASE_URL=http://localhost:5000/api
+ARG VITE_API_BASE_URL=http://localhost:5002/api
 # Persist inside the final image as an environment variable
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
@@ -19,8 +19,12 @@ RUN npm run build
 # Stage 2: Serve the React app with Nginx
 FROM nginx:1.27-alpine
 
+RUN apk add --no-cache gettext
+
 COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker-entrypoint.sh /docker-entrypoint.d/40-render-env-config.sh
+RUN chmod +x /docker-entrypoint.d/40-render-env-config.sh
 
 EXPOSE 80
 
