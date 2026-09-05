@@ -59,3 +59,20 @@ artifact at different stages of promotion — never three different builds.
 The `run:` lines under each `deploy-*` job are placeholders. Replace with
 whatever matches your hosting (SSH + `docker compose pull && up -d`, a
 Kubernetes `kubectl set image`, or a managed platform's deploy CLI/action).
+
+## Nginx reverse proxy
+
+Local: `nginx/reverse-proxy.conf`, wired in as the `proxy` service in
+`docker-compose.yml`. It's the only service with a host-published port —
+frontend, backend, and mongo are only reachable inside the Docker network.
+Frontend's `API_BASE_URL` is now the relative path `/api`, so the browser
+only ever talks to one origin (no CORS).
+
+VPS: nginx runs on the host itself (not in a container), so it can survive
+independently of `docker compose` and integrate cleanly with certbot for
+TLS. See `nginx/vps-host-nginx.conf.example` — copy it to
+`/etc/nginx/sites-available/mern-app.conf` on the VPS, point `proxy_pass`
+at whatever local port you bind the Docker `proxy` service to
+(`127.0.0.1:8080:80` rather than `80:80`), then run
+`certbot --nginx -d yourdomain.com` to add TLS. Never expose 5000 or 27017
+to the internet — only nginx (80/443) should be reachable externally.

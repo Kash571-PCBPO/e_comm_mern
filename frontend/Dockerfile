@@ -10,7 +10,7 @@ RUN npm install
 COPY . .
 
 # Create temporary variable only available during Docker build the image
-ARG VITE_API_BASE_URL=http://localhost:5002/api
+ARG VITE_API_BASE_URL=/api
 # Persist inside the final image as an environment variable
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 

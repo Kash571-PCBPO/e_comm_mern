@@ -2,7 +2,7 @@
 
 set -e
 
-: "${API_BASE_URL:=http://localhost:5002/api}"
+: "${API_BASE_URL:=/api}"
 
 cat > /usr/share/nginx/html/env-config.js << CONFIG
 window._env_ = {
