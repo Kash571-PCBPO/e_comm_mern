@@ -3,8 +3,8 @@ pipeline {
 
     environment {
         REGISTRY       = "ghcr.io"
-        BACKEND_IMAGE  = "yourgithubusername/e-comm-mern/backend"
-        FRONTEND_IMAGE = "yourgithubusername/e-comm-mern/frontend"
+        BACKEND_IMAGE  = "Kash571-PCBPO/e-comm-mern/backend"
+        FRONTEND_IMAGE = "Kash571-PCBPO/e-comm-mern/frontend"
         IMAGE_TAG      = "${env.GIT_COMMIT.take(7)}"
     }
 
