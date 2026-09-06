@@ -1,4 +1,4 @@
-# MERN E-Commerce Application
+# - MERN E-Commerce Application -
 
 Full-stack folder structure scaffold (feature-based frontend, module-based backend MVC).
 
