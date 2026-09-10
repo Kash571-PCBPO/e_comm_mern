@@ -46,7 +46,8 @@ pipeline {
             when { branch 'dev' }
             steps {
                 withCredentials([string(credentialsId: 'mongo-uri-dev', variable: 'MONGO_URI')]) {
-                    sh 'docker compose -f docker-compose.yml up -d --build'
+                     sh 'docker compose -f docker-compose.yml down'
+                     sh 'docker compose -f docker-compose.yml up -d --build'
                 }
             }
         }
@@ -54,8 +55,9 @@ pipeline {
         stage('Deploy: qa') {
             when { branch 'qa' }
             steps {
-                input message: 'Approve deploy to QA?'   // <- Jenkins' equivalent of a required reviewer
+                input message: 'Approve deploy to QA?'
                 withCredentials([string(credentialsId: 'mongo-uri-qa', variable: 'MONGO_URI')]) {
+                    sh 'docker compose -f docker-compose.yml down'
                     sh 'docker compose -f docker-compose.yml up -d --build'
                 }
             }
@@ -66,6 +68,7 @@ pipeline {
             steps {
                 input message: 'Approve deploy to PRODUCTION?'
                 withCredentials([string(credentialsId: 'mongo-uri-prod', variable: 'MONGO_URI')]) {
+                    sh 'docker compose -f docker-compose.yml down'
                     sh 'docker compose -f docker-compose.yml up -d --build'
                 }
             }
