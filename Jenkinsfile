@@ -52,10 +52,10 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'ghcr-creds', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
                     sh 'echo $GHCR_TOKEN | docker login ghcr.io -u $GHCR_USER --password-stdin'
-                    sh "docker build -t ${BACKEND_IMAGE}:${IMAGE_TAG} ./backend"
-                    sh "docker build -t ${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend"
-                    sh "docker push ${BACKEND_IMAGE}:${IMAGE_TAG}"
-                    sh "docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                    sh "docker build -t ${env.BACKEND_IMAGE}:${env.IMAGE_TAG} ./backend"
+                    sh "docker build -t ${env.FRONTEND_IMAGE}:${env.IMAGE_TAG} ./frontend"
+                    sh "docker push ${env.BACKEND_IMAGE}:${env.IMAGE_TAG}"
+                    sh "docker push ${env.FRONTEND_IMAGE}:${env.IMAGE_TAG}"
                 }
             }
         }
