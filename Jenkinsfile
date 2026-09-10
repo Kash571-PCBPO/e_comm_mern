@@ -1,0 +1,85 @@
+pipeline {
+    agent any
+
+    environment {
+        REGISTRY       = "ghcr.io"
+        BACKEND_IMAGE  = "kash571-pcbpo/e-comm-mern/backend"
+        FRONTEND_IMAGE = "kash571-pcbpo/e-comm-mern/frontend"
+        IMAGE_TAG      = ""
+    }
+
+    stages {
+        stage('Set image tag') {
+            steps {
+                script {
+                    env.IMAGE_TAG = "sha-${env.GIT_COMMIT.take(7)}"
+                }
+            }
+        }
+
+        stage('Test') {
+            parallel {
+                stage('Backend tests') {
+                    steps {
+                        dir('backend') {
+                            sh 'npm install'
+                            sh 'npm test --if-present'
+                        }
+                    }
+                }
+                stage('Frontend tests') {
+                    steps {
+                        dir('frontend') {
+                            sh 'npm install'
+                            sh 'npm test --if-present'
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Build and push images') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'ghcr-creds', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
+                    sh 'printf "%s" "$GHCR_TOKEN" | docker login "$REGISTRY" --username "$GHCR_USER" --password-stdin'
+                    sh "docker build -t ${env.REGISTRY}/${env.BACKEND_IMAGE}:${env.IMAGE_TAG} ./backend"
+                    sh "docker build -t ${env.REGISTRY}/${env.FRONTEND_IMAGE}:${env.IMAGE_TAG} ./frontend"
+                    sh "docker push ${env.REGISTRY}/${env.BACKEND_IMAGE}:${env.IMAGE_TAG}"
+                    sh "docker push ${env.REGISTRY}/${env.FRONTEND_IMAGE}:${env.IMAGE_TAG}"
+                }
+            }
+        }
+
+        stage('Deploy: dev') {
+            when { branch 'dev' }
+            steps {
+                withCredentials([string(credentialsId: 'mongo-uri-dev', variable: 'MONGO_URI')]) {
+                     sh 'docker compose -f docker-compose.yml down'
+                     sh 'docker compose -f docker-compose.yml up -d --build'
+                }
+            }
+        }
+
+        stage('Deploy: qa') {
+            when { branch 'qa' }
+            steps {
+                input message: 'Approve deploy to QA?'
+                withCredentials([string(credentialsId: 'mongo-uri-qa', variable: 'MONGO_URI')]) {
+                    sh 'docker compose -f docker-compose.yml down'
+                    sh 'docker compose -f docker-compose.yml up -d --build'
+                }
+            }
+        }
+
+        stage('Deploy: production') {
+            when { tag "v*" }
+            steps {
+                input message: 'Approve deploy to PRODUCTION?'
+                withCredentials([string(credentialsId: 'mongo-uri-prod', variable: 'MONGO_URI')]) {
+                    sh 'docker compose -f docker-compose.yml down'
+                    sh 'docker compose -f docker-compose.yml up -d --build'
+                }
+            }
+        }
+    }
+}
