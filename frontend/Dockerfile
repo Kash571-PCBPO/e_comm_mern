@@ -1,6 +1,6 @@
 # Frontend Dockerfile
 # Stage 1: Build the React app
-FROM node:20-alpine AS build
+FROM node:26-alpine AS build
 
 WORKDIR /app
 
