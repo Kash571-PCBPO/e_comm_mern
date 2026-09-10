@@ -1,7 +1,7 @@
 services:
   mongo:
     image: mongo:7
-    container_name: mongo_e_comm
+    container_name: mongo_e_comm_new
     restart: unless-stopped
     volumes:
       - mongo_data:/data/db
