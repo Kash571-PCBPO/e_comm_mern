@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: e-comm-config
+  namespace: e-comm
+data:
+  PORT: "5000"
+  MONGO_URI: mongodb://mongo:27017/ecomm_db
