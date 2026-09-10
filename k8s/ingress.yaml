@@ -6,10 +6,12 @@ metadata:
   annotations:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "60"
 spec:
+  # Must match a class returned by `kubectl get ingressclass`.
   ingressClassName: nginx
   rules:
-    - host: e-comm.local
-      http:
+    # No host condition: use the cluster's public IP or DNS name directly.
+    # Add `host:` later after creating a DNS record.
+    - http:
         paths:
           - path: /api
             pathType: Prefix

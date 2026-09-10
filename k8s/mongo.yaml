@@ -19,6 +19,8 @@ metadata:
 spec:
   accessModes:
     - ReadWriteOnce
+  # Uses the default StorageClass. If it remains Pending, set storageClassName
+  # to a class returned by `kubectl get storageclass`.
   resources:
     requests:
       storage: 5Gi

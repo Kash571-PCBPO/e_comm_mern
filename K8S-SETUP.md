@@ -1,243 +1,207 @@
-# Kubernetes setup
+# Deploy this project to the remote Kubernetes cluster
 
-This directory mirrors the current Docker Compose application:
+This guide deploys the MERN application in this repository to the cluster whose dashboard is available at `http://167.172.77.230:32507/#/login`.
+
+That URL is a **Kubernetes Dashboard NodePort**, not the Kubernetes API server. It is useful for viewing workloads after deployment, but it cannot configure VS Code or `kubectl` by itself. `kubectl` needs a kubeconfig file issued by the cluster administrator (or copied securely from the control-plane host).
+
+## What is deployed
 
 ```text
-Ingress e-comm.local
-  /api -> backend Service -> backend Pods
-  /    -> frontend Service -> frontend Pods
+Browser
+  |-- Ingress (when an ingress controller exists) --> frontend Service --> React/Nginx Pods
+  |                                                   |-- /api --> backend Service --> API Pods
+  |
+  |-- frontend NodePort (fallback) ------------------> React/Nginx Pods
+                                                        |-- /api --> backend Service --> API Pods
 
-backend Pods -> mongo Service -> MongoDB Pod -> mongo-data PVC
+API Pods --> mongo Service --> MongoDB Pod --> mongo-data PVC
 ```
 
-The first version runs MongoDB inside Kubernetes so the current project can be tested end to end. For production, use a managed MongoDB service or a MongoDB operator instead of treating a single MongoDB Pod as a highly available database.
+The MongoDB deployment is appropriate for development and test environments. Use MongoDB Atlas, another managed database, or a properly operated MongoDB replica set before treating this as a production database.
 
-## 1. Prerequisites
+## Files in `k8s/`
 
-Install and verify:
+| File | Purpose |
+| --- | --- |
+| `namespace.yaml` | Creates the isolated `e-comm` namespace. |
+| `configmap.yaml` | Supplies `PORT` and the in-cluster MongoDB connection string. |
+| `mongo.yaml` | Creates MongoDB, its internal service, and a 5 GiB PVC. |
+| `backend.yaml` | Runs two API replicas and exposes health probes. |
+| `frontend.yaml` | Runs two frontend replicas and exposes an Ingress-facing plus NodePort service. |
+| `ingress.yaml` | Routes `/api` to the API and everything else to the frontend. |
+| `kustomization.yaml` | Builds the complete deployment and selects image tags. |
+| `secret.example.yaml` | Documentation only; never apply it with real credentials. |
 
-```bash
-kubectl version --client
-kubectl kustomize version
-```
+## 1. Set up access from this computer
 
-You also need a Kubernetes cluster and an NGINX Ingress controller. For Minikube:
+`kubectl` v1.36.1 is already installed on this machine, but it currently has no context. Ask the cluster administrator for one of these:
 
-```bash
-minikube start
-minikube addons enable ingress
-```
+1. A kubeconfig file for this cluster, with credentials that can create resources in the `e-comm` namespace; or
+2. Secure SSH access to the control-plane machine, so the administrator can provide a least-privileged kubeconfig.
 
-For Docker Desktop Kubernetes, install an NGINX Ingress controller separately if one is not already installed.
+Do not use the dashboard's login token as a kubeconfig and do not commit a kubeconfig to this repository.
 
-## 1.1 Connect to the control plane dashboard
+Store the supplied file outside the repository, for example at `$env:USERPROFILE\.kube\remote-e-comm.yaml`, then run this in PowerShell:
 
-The dashboard is a Kubernetes client. It does not connect directly to the frontend,
-backend, or MongoDB. It connects to the Kubernetes API server, so use the same
-cluster context that the dashboard uses:
-
-```bash
-kubectl config current-context
-kubectl cluster-info
-kubectl get nodes
-```
-
-If these commands show your control-plane cluster, this project is already connected
-to it. Apply the manifests from a terminal configured for that context:
-
-```bash
-kubectl apply -k k8s
-kubectl get all -n e-comm
-```
-
-Then open the dashboard and select the `e-comm` namespace. You should see the MongoDB,
-backend, and frontend workloads, Services, the PVC, and the Ingress. The dashboard
-does not need a special project connection or URL.
-
-To switch clusters, select the dashboard's cluster context or use kubectl explicitly:
-
-```bash
+```powershell
+$env:KUBECONFIG = "$env:USERPROFILE\.kube\remote-e-comm.yaml"
 kubectl config get-contexts
-kubectl config use-context <CONTROL_PLANE_CONTEXT>
+kubectl config use-context <CONTEXT_NAME>
+kubectl cluster-info
+kubectl get nodes -o wide
+kubectl auth can-i create deployments -n e-comm
+kubectl auth can-i create secrets -n e-comm
 ```
 
-Do not run `kubectl apply` until `kubectl config current-context` identifies the
-cluster where you intend to deploy.
+Only continue when `kubectl get nodes` shows the remote nodes and both permission checks return `yes`. To make the context persistent, merge the received kubeconfig into your normal Kubernetes configuration rather than storing it in this project.
 
-## 2. Log in to GHCR
+## 2. Optional VS Code setup
 
-The backend and frontend images are stored in GHCR. Create the Kubernetes pull secret from the Docker login configuration. Do this on the machine where `kubectl` is configured:
+VS Code is not required. The required command-line tool (`kubectl`) is installed. For a convenient cluster explorer and YAML validation, install the **Kubernetes** extension by Microsoft in VS Code. It reads the same `KUBECONFIG` environment variable/context as the terminal. Restart VS Code after setting a persistent kubeconfig, then choose the remote context from the Kubernetes sidebar.
 
-```bash
-docker login ghcr.io
-kubectl create namespace e-comm
-kubectl create secret generic ghcr-secret \
-  --from-file=.dockerconfigjson=$HOME/.docker/config.json \
-  --type=kubernetes.io/dockerconfigjson \
-  --namespace=e-comm
+Docker Desktop is only needed on this computer if you will build and push images yourself. It is not required to apply already published images.
+
+## 3. Publish images and choose an immutable tag
+
+The cluster pulls these images:
+
+```text
+ghcr.io/kash571-pcbpo/e-comm-mern/backend:<TAG>
+ghcr.io/kash571-pcbpo/e-comm-mern/frontend:<TAG>
 ```
 
-On PowerShell, the equivalent is:
+Ensure the selected tag exists for **both** images. Jenkins currently publishes `sha-<seven-character-commit>` tags. Update both `newTag` values in `k8s/kustomization.yaml` to the same published tag before deploying. Avoid using `latest` for a repeatable deployment.
+
+If the GHCR packages are private, create the pull secret after you have selected the remote cluster context. Use a GitHub personal access token that has `read:packages`; it does not need repository write access.
 
 ```powershell
 docker login ghcr.io
-kubectl create namespace e-comm
+kubectl apply -f k8s/namespace.yaml
 kubectl create secret generic ghcr-secret `
-  --from-file=.dockerconfigjson="$HOME/.docker/config.json" `
+  --from-file=.dockerconfigjson="$env:USERPROFILE\.docker\config.json" `
   --type=kubernetes.io/dockerconfigjson `
-  --namespace=e-comm
-```
-
-The `.dockerconfigjson` field in `secret.example.yaml` is not a file path to edit
-and should not contain a real token. It is a placeholder showing the Secret type.
-The commands above create the correct JSON from your local Docker login and store it
-in the cluster as `ghcr-secret`. Do not apply `k8s/secret.example.yaml`.
-
-If you must create the Secret from a JSON file, first run `docker login ghcr.io`,
-then use the generated Docker configuration directly:
-
-```bash
-kubectl create secret generic ghcr-secret \
-  --from-file=.dockerconfigjson=$HOME/.docker/config.json \
-  --type=kubernetes.io/dockerconfigjson \
-  --namespace=e-comm \
+  --namespace=e-comm `
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-The GitHub PAT used by `docker login` needs `read:packages`. Never commit
-`~/.docker/config.json`, a PAT, or a completed Secret manifest.
+If the packages are public, the secret is not needed for image access, but leaving the pull-secret reference in the workloads is harmless once the secret exists. Never commit the Docker config, a GitHub token, or a completed secret manifest.
 
-## 3. Choose the image version
+## 4. Inspect the target cluster before deployment
 
-`k8s/kustomization.yaml` currently selects the `latest` image tag. For a repeatable deployment, replace `latest` with the tag pushed by Jenkins, for example:
+Run these from the repository root:
 
-```yaml
-images:
-  - name: ghcr.io/kash571-pcbpo/e-comm-mern/backend
-    newTag: sha-429c6e7
-  - name: ghcr.io/kash571-pcbpo/e-comm-mern/frontend
-    newTag: sha-429c6e7
-```
-
-Use the same commit tag for both images. Immutable commit tags make rollback possible and avoid silently changing running workloads.
-
-## 4. Preview the resources
-
-From the repository root:
-
-```bash
+```powershell
+kubectl get storageclass
+kubectl get ingressclass
+kubectl get service -A
 kubectl kustomize k8s
 ```
 
-This renders the Namespace, ConfigMap, MongoDB Service/Deployment/PVC, backend Service/Deployment, frontend Service/Deployment, and Ingress without changing the cluster.
+The PVC in `mongo.yaml` uses the default StorageClass. If no class is marked `(default)`, change `mongo.yaml` to add the appropriate `storageClassName` before applying. `ingress.yaml` expects an IngressClass named `nginx`; if the cluster uses another class, replace `ingressClassName: nginx` with the returned class name.
 
-## 5. Apply the application
+If there is no ingress controller, deployment still works through the frontend NodePort; skip no manifests.
 
-```bash
+## 5. Deploy
+
+```powershell
 kubectl apply -k k8s
-kubectl get pods -n e-comm -w
+kubectl rollout status deployment/mongo -n e-comm --timeout=180s
+kubectl rollout status deployment/backend -n e-comm --timeout=180s
+kubectl rollout status deployment/frontend -n e-comm --timeout=180s
+kubectl get all,pvc,ingress -n e-comm
 ```
 
-The expected final state is:
+Expected ready workloads:
 
 ```text
-mongo       1/1 Running
-backend     2/2 Running
-frontend    2/2 Running
+deployment/mongo       1/1
+deployment/backend     2/2
+deployment/frontend    2/2
 ```
 
-Check all resources:
+Open the supplied dashboard, log in yourself, and select namespace `e-comm` to view the deployments, pods, services, PVC, and ingress. A dashboard login does not replace the `kubectl` permissions required above.
 
-```bash
-kubectl get all -n e-comm
-kubectl get pvc -n e-comm
-kubectl get ingress -n e-comm
+## 6. Open the application
+
+### Preferred: Ingress
+
+Find the ingress controller service and its public address or NodePort:
+
+```powershell
+kubectl get service -A | Select-String -Pattern 'ingress|nginx|traefik'
+kubectl get ingress e-comm -n e-comm
 ```
 
-## 6. Test the API and website
+The ingress has no host restriction, so browse to the controller's public IP/DNS on its HTTP port. Once you have a domain, add a `host:` entry to `k8s/ingress.yaml`, create the matching DNS A/AAAA record, and configure TLS at the ingress controller.
 
-The Ingress uses the host `e-comm.local`. With Minikube, get the ingress address:
+### Reliable fallback: frontend NodePort
 
-```bash
-minikube ip
+```powershell
+kubectl get service frontend -n e-comm
 ```
 
-Add this entry to the local hosts file, replacing the address with the Minikube IP:
+Use the returned port in `http://167.172.77.230:<NODE_PORT>/`. For example, if the `PORT(S)` value is `80:31234/TCP`, open `http://167.172.77.230:31234/`. The frontend Nginx configuration proxies `/api` to the backend internally, so the website and API work through this one port. Ensure the cloud firewall permits only the NodePort you intend to expose (normally the Kubernetes NodePort range is 30000-32767).
 
-```text
-<MINIKUBE_IP> e-comm.local
+### Validation commands
+
+```powershell
+kubectl get endpoints -n e-comm
+kubectl logs deployment/backend -n e-comm --tail=100
+kubectl run curl --rm -it --restart=Never -n e-comm --image=curlimages/curl -- `
+  curl -fsS http://backend:5000/api/health
 ```
 
-On Windows, edit:
+The last command must return a JSON response with `"success":true`. You can also temporarily validate without public networking:
 
-```text
-C:\Windows\System32\drivers\etc\hosts
-```
-
-Then test:
-
-```bash
-curl -H "Host: e-comm.local" http://<INGRESS_ADDRESS>/api/health
-curl -H "Host: e-comm.local" http://<INGRESS_ADDRESS>/
-```
-
-Open `http://e-comm.local` in a browser. The page should report `API reachable`.
-
-If an Ingress controller is not available yet, test the services with port forwarding:
-
-```bash
-kubectl port-forward -n e-comm service/backend 5000:5000
+```powershell
 kubectl port-forward -n e-comm service/frontend 8080:80
 ```
 
-Use `http://localhost:5000/api/health` for the backend. The frontend should normally be tested through Ingress because its browser API path is `/api`.
+Then open `http://localhost:8080/`; `/api` is proxied by the frontend pod.
 
-## 7. Roll out a new Jenkins image
+## 7. Update and roll back
 
-After Jenkins pushes a new `sha-<commit>` image:
+For each release, publish both images with the same immutable tag, change the two tags in `k8s/kustomization.yaml`, and apply:
 
-1. Update both `newTag` values in `k8s/kustomization.yaml`.
-2. Preview with `kubectl kustomize k8s`.
-3. Apply with `kubectl apply -k k8s`.
-4. Watch the rollout:
-
-```bash
+```powershell
+kubectl diff -k k8s
+kubectl apply -k k8s
 kubectl rollout status deployment/backend -n e-comm
 kubectl rollout status deployment/frontend -n e-comm
 ```
 
-Rollback if needed:
+To revert the last rollout:
 
-```bash
+```powershell
 kubectl rollout undo deployment/backend -n e-comm
 kubectl rollout undo deployment/frontend -n e-comm
 ```
 
+For a precise rollback, change `kustomization.yaml` back to the previous known-good image tags and apply it; that also keeps Git's desired state accurate.
+
 ## 8. Troubleshooting
 
-```bash
-kubectl describe pod -n e-comm <pod-name>
-kubectl logs -n e-comm deployment/backend
-kubectl logs -n e-comm deployment/frontend
-kubectl describe ingress -n e-comm e-comm
+```powershell
+kubectl get pods -n e-comm -o wide
 kubectl get events -n e-comm --sort-by=.lastTimestamp
+kubectl describe pod -n e-comm <POD_NAME>
+kubectl logs deployment/mongo -n e-comm --tail=100
+kubectl logs deployment/backend -n e-comm --tail=100
+kubectl logs deployment/frontend -n e-comm --tail=100
+kubectl describe ingress e-comm -n e-comm
 ```
 
-Common symptoms:
+| Symptom | Likely cause and correction |
+| --- | --- |
+| `kubectl` connects to `localhost:8080` | No current kubeconfig context. Complete step 1. |
+| `ImagePullBackOff` | The tag does not exist, packages are private without `ghcr-secret`, or the secret/token lacks `read:packages`. |
+| MongoDB PVC remains `Pending` | There is no usable default StorageClass. Choose one from `kubectl get storageclass` and set `storageClassName`. |
+| Backend is not ready | MongoDB is not ready or `MONGO_URI` was changed incorrectly. Inspect both logs. |
+| Ingress has no address or returns 404 | The controller/class is absent or does not match `ingressClassName`. Use the frontend NodePort while correcting the controller configuration. |
+| NodePort times out externally | Allow the assigned NodePort in the server/cloud firewall, or expose the ingress controller instead. |
 
-- `ImagePullBackOff`: the GHCR secret is missing, invalid, or lacks package read permission.
-- Backend readiness failures: inspect backend logs and verify MongoDB is `Ready`.
-- Ingress 404 or no address: install or enable an NGINX Ingress controller.
-- PVC pending: the cluster has no default StorageClass; install one or configure storage for the cluster.
+## Changes made for remote-cluster support
 
-## What each file does
-
-- `namespace.yaml`: isolates the application in the `e-comm` namespace.
-- `configmap.yaml`: supplies the non-secret backend port and MongoDB connection string.
-- `mongo.yaml`: creates MongoDB, its internal Service, and persistent storage.
-- `backend.yaml`: runs two backend replicas and exposes `/api/health` for probes.
-- `frontend.yaml`: runs two NGINX frontend replicas and serves the built React app.
-- `ingress.yaml`: replaces the Docker reverse proxy and routes browser traffic.
-- `kustomization.yaml`: combines the resources and centrally selects image tags.
-- `secret.example.yaml`: documents the pull-secret shape; it must not contain real credentials.
-- The dashboard uses the cluster context and Kubernetes API; it does not require a separate application connection.
+- `k8s/ingress.yaml` no longer requires the local-only `e-comm.local` hostname.
+- `k8s/frontend.yaml` exposes a Kubernetes-assigned NodePort fallback.
+- `frontend/nginx.conf` proxies `/api` to the backend so the fallback serves the complete application, not just static files.

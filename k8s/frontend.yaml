@@ -4,7 +4,9 @@ metadata:
   name: frontend
   namespace: e-comm
 spec:
-  type: ClusterIP
+  # Kubernetes assigns the NodePort. Retrieve it with
+  # `kubectl get service frontend -n e-comm` after deployment.
+  type: NodePort
   ports:
     - name: http
       port: 80
