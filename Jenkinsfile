@@ -1,20 +1,38 @@
 pipeline {
     agent any
 
+    options {
+        skipDefaultCheckout(true)
+    }
+
     environment {
-        REGISTRY       = "ghcr.io"
-        BACKEND_IMAGE  = "kash571-pcbpo/e-comm-mern/backend"
-        FRONTEND_IMAGE = "kash571-pcbpo/e-comm-mern/frontend"
-        IMAGE_TAG      = "${env.GIT_COMMIT.take(7)}"
+        BACKEND_IMAGE  = "ghcr.io/kash571-pcbpo/e-comm-mern/backend"
+        FRONTEND_IMAGE = "ghcr.io/kash571-pcbpo/e-comm-mern/frontend"
+        IMAGE_TAG      = ""
     }
 
     stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+                script {
+                    env.IMAGE_TAG = "sha-${env.GIT_COMMIT.take(7)}"
+                }
+            }
+        }
+
+        stage('Validate deployment config') {
+            steps {
+                sh 'docker compose config -q'
+            }
+        }
+
         stage('Test') {
             parallel {
                 stage('Backend tests') {
                     steps {
                         dir('backend') {
-                            sh 'npm install'
+                            sh 'npm ci'
                             sh 'npm test --if-present'
                         }
                     }
@@ -22,7 +40,7 @@ pipeline {
                 stage('Frontend tests') {
                     steps {
                         dir('frontend') {
-                            sh 'npm install'
+                            sh 'npm ci'
                             sh 'npm test --if-present'
                         }
                     }
@@ -34,10 +52,10 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(credentialsId: 'ghcr-creds', usernameVariable: 'GHCR_USER', passwordVariable: 'GHCR_TOKEN')]) {
                     sh 'echo $GHCR_TOKEN | docker login ghcr.io -u $GHCR_USER --password-stdin'
-                    sh "docker build -t ${REGISTRY}/${BACKEND_IMAGE}:${IMAGE_TAG} ./backend"
-                    sh "docker build -t ${REGISTRY}/${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend"
-                    sh "docker push ${REGISTRY}/${BACKEND_IMAGE}:${IMAGE_TAG}"
-                    sh "docker push ${REGISTRY}/${FRONTEND_IMAGE}:${IMAGE_TAG}"
+                    sh "docker build -t ${BACKEND_IMAGE}:${IMAGE_TAG} ./backend"
+                    sh "docker build -t ${FRONTEND_IMAGE}:${IMAGE_TAG} ./frontend"
+                    sh "docker push ${BACKEND_IMAGE}:${IMAGE_TAG}"
+                    sh "docker push ${FRONTEND_IMAGE}:${IMAGE_TAG}"
                 }
             }
         }
@@ -46,8 +64,8 @@ pipeline {
             when { branch 'dev' }
             steps {
                 withCredentials([string(credentialsId: 'mongo-uri-dev', variable: 'MONGO_URI')]) {
-                     sh 'docker compose -f docker-compose.yml down'
-                     sh 'docker compose -f docker-compose.yml up -d --build'
+                    sh 'docker compose pull backend frontend'
+                    sh 'docker compose up -d --no-build --remove-orphans'
                 }
             }
         }
@@ -57,8 +75,8 @@ pipeline {
             steps {
                 input message: 'Approve deploy to QA?'
                 withCredentials([string(credentialsId: 'mongo-uri-qa', variable: 'MONGO_URI')]) {
-                    sh 'docker compose -f docker-compose.yml down'
-                    sh 'docker compose -f docker-compose.yml up -d --build'
+                    sh 'docker compose pull backend frontend'
+                    sh 'docker compose up -d --no-build --remove-orphans'
                 }
             }
         }
@@ -68,8 +86,8 @@ pipeline {
             steps {
                 input message: 'Approve deploy to PRODUCTION?'
                 withCredentials([string(credentialsId: 'mongo-uri-prod', variable: 'MONGO_URI')]) {
-                    sh 'docker compose -f docker-compose.yml down'
-                    sh 'docker compose -f docker-compose.yml up -d --build'
+                    sh 'docker compose pull backend frontend'
+                    sh 'docker compose up -d --no-build --remove-orphans'
                 }
             }
         }
