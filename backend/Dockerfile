@@ -5,13 +5,13 @@ WORKDIR /app
 
 # Copy package.json and package-lock.json
 COPY package*.json ./
-RUN npm install --omit=dev
+RUN npm ci --omit=dev
 
 # Copy application source
 COPY src ./src
 
 ENV NODE_ENV=production
-EXPOSE 5001
+EXPOSE 5000
 
 USER node
 
